@@ -31,3 +31,7 @@ target_link_libraries(aspl_cuda cudaASPLgraph Boost::program_options)
 add_executable(beamer cppcode/beamer.cpp ${HEADERS})
 target_include_directories(beamer PUBLIC cudacode cppcode)
 target_link_libraries(beamer cudaASPL Boost::program_options)
+
+add_executable(annealing cppcode/annealing.cpp ${HEADERS})
+target_include_directories(annealing PUBLIC cudacode cppcode)
+target_link_libraries(annealing cudaASPL Boost::program_options)
