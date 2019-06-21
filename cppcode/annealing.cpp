@@ -6,6 +6,7 @@
 #include <fstream>
 #include <vector>
 #include <random>
+#include <cmath>
 #include "part.hpp"
 #include "cudaASPLconv.hpp"
 int main(int argc, char* argv[]){
@@ -19,7 +20,8 @@ int main(int argc, char* argv[]){
     ("output,o",boost::program_options::value<std::string>(), "output filepath")
     ("log,l",boost::program_options::value<std::string>(), "log filepath")
     ("verbose,v",boost::program_options::value<std::string>(), "verbose output filepath")
-    ("device,D",boost::program_options::value<int>(), "GPU id");
+    ("device,D",boost::program_options::value<int>(), "GPU id")
+    ("temp,t",boost::program_options::value<double>(),"initial templature");
     boost::program_options::variables_map vm;
     try{
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, opt), vm);
@@ -209,18 +211,22 @@ int main(int argc, char* argv[]){
     double init_ASPL = cu.calc(init);
     graphgolf::part x = init;
     double fx=init_ASPL;
+    graphgolf::part x_best = x;
+    double fx_best = fx;
     std::cout<<"ASPL(init_x): "<<init_ASPL<<std::endl;
     if(verbose){
         verbosefs<<"#ASPL(init_x): "<<init_ASPL<<std::endl;
     }
+    double temp = 0.001091346;
     if(logging){
-        logfs<<"#iteration ASPL(x) ASPL(y)"<<std::endl;
-        logfs<<0<<' '<<init_ASPL<<' '<<init_ASPL<<std::endl;
+        logfs<<"#iteration ASPL(x_best) ASPL(x) ASPL(y) temp"<<std::endl;
+        logfs<<0<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<temp<<std::endl;
     }
     int count = 1000;
     if(vm.count("count")){
         count=vm["count"].as<int>();
     }
+    std::uniform_real_distribution<double> dist_p(0,1);
     for(int i=1;i<=count;i++){
         auto start = std::chrono::steady_clock::now();
         graphgolf::part y=createNeighbour(x);
@@ -228,22 +234,30 @@ int main(int argc, char* argv[]){
         auto end = std::chrono::steady_clock::now();
         double elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end-start).count();
         std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
-        std::cout<<"iteration: "<<i<<" fx: "<<fx<<" fy: "<<fy<<" time: "<<elapsed<<"ms"<<std::flush;
+        std::cout<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" fy: "<<fy<<" time: "<<elapsed<<"ms temp: "<<temp<<std::flush;
         if(verbose){
-            verbosefs<<"iteration: "<<i<<" fx: "<<fx<<" fy: "<<fy<<std::endl;
+            verbosefs<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" fy: "<<fy<<" temp: "<<temp<<std::endl;
         }
         if(logging){
-            logfs<<i<<' '<<fx<<' '<<fy<<std::endl;
+            logfs<<i<<' '<<fx_best<<' '<<fx<<' '<<fy<<' '<<temp<<std::endl;
         }
         if(fy<fx){
+            fx=fy;
+            x=y;
+        }else if(dist_p(engine)<exp((fx-fy)/temp)){
+            fx=fy;
+            x=y;
+        }
+        if(fy<fx_best){
             std::cout<<std::endl;
             if(verbose){
                 verbosefs<<"#update. new solution:"<<std::endl;
                 y.print(verbosefs);
             }
-            x=y;
-            fx=fy;
+            x_best=y;
+            fx_best=fy;
         }
+        if(count%100000==0) temp*=0.95;
     }
     auto end = std::chrono::steady_clock::now();
     double elapsed = std::chrono::duration_cast<std::chrono::seconds>(end-init_time).count();
