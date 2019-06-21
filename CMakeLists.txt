@@ -20,9 +20,9 @@ add_subdirectory(cudacode)
 target_include_directories(main PUBLIC cudacode cppcode)
 target_link_libraries(main cudaASPL)
 
-add_executable(HillClimb cppcode/HillClimb.cpp ${HEADERS})
-target_include_directories(HillClimb PUBLIC cudacode cppcode)
-target_link_libraries(HillClimb cudaASPL Boost::program_options)
+add_executable(HillClimb-debug cppcode/HillClimb.cpp ${HEADERS})
+target_include_directories(HillClimb-debug PUBLIC cudacode cppcode)
+target_link_libraries(HillClimb-debug cudaASPL Boost::program_options)
 
 add_executable(aspl_cuda cppcode/aspl_cuda.cpp cppcode/graph.hpp)
 target_include_directories(aspl_cuda PUBLIC cudacode cppcode)
