@@ -107,7 +107,7 @@ int main(int argc, char* argv[]){
     std::uniform_int_distribution<> dist_e(0,init.degree-1);//正則を仮定
     std::uniform_int_distribution<> dist_v(0,1);
     std::uniform_int_distribution<> dist_k(0,init.N/init.M-1);
-    auto createNeighbour = [&](graphgolf::part p){
+    std::function<graphgolf::part(graphgolf::part)> createNeighbour = [&](graphgolf::part p){
         int v = dist_v(engine);
         if(init.N/init.M-1!=0&&v==0){
             //辺の長さを変化させる
@@ -115,18 +115,23 @@ int main(int argc, char* argv[]){
             int idx_from = dist_e(engine);
             int diff = p.edges[from][idx_from];
             int to = (p.N+from+diff)%p.M;
-            int idx_to;
+            int idx_to=10000000;
             for(int i=0;i<p.edges[to].size();i++){
                 if(p.edges[to][i]+diff==0){
+                    if(diff==0&&i==idx_from) continue;
                     idx_to=i;
                     break;
                 }
             }
-            if(diff<0){
+            if(from>to){
                 std::swap(from,to);
                 std::swap(idx_from,idx_to);
             }
             int newdiff=(to-from)+p.M*dist_k(engine);
+            assert(to<p.edges.size());
+            assert(from<p.edges.size());
+            assert(idx_from<p.edges[from].size());
+            assert(idx_to<p.edges[to].size());
             p.edges[from][idx_from]=newdiff;
             p.edges[to][idx_to]=-newdiff;
             return p; 
@@ -138,9 +143,10 @@ int main(int argc, char* argv[]){
                 int idx_a=dist_e(engine);
                 int diff_ab=p.edges[a][idx_a];
                 int b=(p.N+a+diff_ab)%p.M;
-                int idx_b;
+                int idx_b=1000000;
                 for(int i=0;i<p.edges[b].size();i++){
                     if(p.edges[b][i]+diff_ab==0){
+                        if(diff_ab==0&&i==idx_a) continue;
                         idx_b=i;
                         break;
                     }
@@ -149,9 +155,10 @@ int main(int argc, char* argv[]){
                 int idx_c=dist_e(engine);
                 int diff_cd=p.edges[c][idx_c];
                 int d=(p.N+c+diff_cd)%p.M;
-                int idx_d;
+                int idx_d=1000000;
                 for(int i=0;i<p.edges[d].size();i++){
                     if(p.edges[d][i]+diff_cd==0){
+                        if(diff_cd==0&&i==idx_c) continue;
                         idx_d=i;
                         break;
                     }
@@ -160,34 +167,18 @@ int main(int argc, char* argv[]){
                    std::max(a,b)==std::max(c,d)&&
                    std::abs(diff_ab)==std::abs(diff_cd)){
                     continue;
-                }
-                
-                if(idx_a>=p.edges[a].size()){
-                    std::cerr<<"\nidx_a exceeded"<<std::endl;
-                    std::cerr<<"a: "<<a<<", idx_a: "<<idx_a<<", p.edges[a].size(): "<<p.edges[a].size()<<std::endl;
-                    exit(1);
-                }
-                if(idx_b>=p.edges[b].size()){
-                    std::cerr<<"\nidx_b exceeded"<<std::endl;
-                    std::cerr<<"b: "<<b<<", idx_b: "<<idx_b<<", p.edges[b].size(): "<<p.edges[b].size()<<std::endl;
-                    exit(1);
-                }
-                if(idx_c>=p.edges[c].size()){
-                    std::cerr<<"\nidx_c exceeded"<<std::endl;
-                    std::cerr<<"c: "<<c<<", idx_c: "<<idx_c<<", p.edges[c].size(): "<<p.edges[c].size()<<std::endl;
-                    exit(1);
-                }
-                if(idx_d>=p.edges[d].size()){
-                    std::cerr<<"\nidx_d exceeded"<<std::endl;
-                    std::cerr<<"d: "<<d<<", idx_d: "<<idx_d<<", p.edges[d].size(): "<<p.edges[d].size()<<std::endl;
-                    exit(1);
-                }
-                
+                } 
                 if(a>d){
                     std::swap(a,d);
                     std::swap(idx_a,idx_d);
                 }
                 int diff_ad=(d-a)+p.M*dist_k(engine);
+                assert(a<p.edges.size());
+                assert(b<p.edges.size());
+                assert(c<p.edges.size());
+                assert(d<p.edges.size());
+                assert(idx_a<p.edges[a].size());
+                assert(idx_d<p.edges[d].size());
                 p.edges[a][idx_a]=diff_ad;
                 p.edges[d][idx_d]=-diff_ad;
                 if(b>c){
@@ -195,6 +186,8 @@ int main(int argc, char* argv[]){
                     std::swap(idx_b,idx_c);
                 }
                 int diff_bc=(c-b)+p.M*dist_k(engine);
+                assert(idx_b<p.edges[b].size());
+                assert(idx_c<p.edges[c].size());
                 p.edges[b][idx_b]=diff_bc;
                 p.edges[c][idx_c]=-diff_bc;
                 break;
@@ -218,6 +211,7 @@ int main(int argc, char* argv[]){
         verbosefs<<"#ASPL(init_x): "<<init_ASPL<<std::endl;
     }
     double temp = 0.001091346;
+    if(vm.count("temp"))temp=vm["temp"].as<double>();
     if(logging){
         logfs<<"#iteration ASPL(x_best) ASPL(x) ASPL(y) temp"<<std::endl;
         logfs<<0<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<temp<<std::endl;
@@ -234,7 +228,7 @@ int main(int argc, char* argv[]){
         auto end = std::chrono::steady_clock::now();
         double elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end-start).count();
         std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
-        std::cout<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" fy: "<<fy<<" time: "<<elapsed<<"ms temp: "<<temp<<std::flush;
+        std::cout<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" fy: "<<fy<<" time: "<<elapsed<<"ms"<<std::flush;
         if(verbose){
             verbosefs<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" fy: "<<fy<<" temp: "<<temp<<std::endl;
         }
@@ -257,7 +251,7 @@ int main(int argc, char* argv[]){
             x_best=y;
             fx_best=fy;
         }
-        if(count%100000==0) temp*=0.95;
+        if(i%10000==0) temp*=0.995;
     }
     auto end = std::chrono::steady_clock::now();
     double elapsed = std::chrono::duration_cast<std::chrono::seconds>(end-init_time).count();
@@ -266,6 +260,6 @@ int main(int argc, char* argv[]){
     if(verbosefs){
         verbosefs<<"#total elapsed time: "<<elapsed<<"s"<<std::endl; 
     }
-    x.print(ost);
+    x_best.print(ost);
     return 0;
 }
