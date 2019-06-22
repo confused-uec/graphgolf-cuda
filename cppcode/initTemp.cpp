@@ -1,28 +1,28 @@
+#include <algorithm>
+#include <vector>
 #include <iostream>
+#include <random>
+#include <boost/program_options.hpp>
 #include <functional>
 #include <chrono>
-#include <algorithm>
-#include <boost/program_options.hpp>
 #include <fstream>
-#include <vector>
-#include <random>
 #include <cmath>
 #include "part.hpp"
 #include "cudaASPLconv.hpp"
 #include "cpuASPLqueue.cpp"
+
 int main(int argc, char* argv[]){
-    auto init_time = std::chrono::steady_clock::now();
     boost::program_options::options_description opt("オプション");
     opt.add_options()
     ("help,h", "ヘルプを表示")
-    ("count,c", boost::program_options::value<int>()->default_value(1000), "iteration count")
+    ("number,n", boost::program_options::value<int>()->default_value(1000), "頂点数")
+    ("degree,d", boost::program_options::value<int>()->default_value(16), "次数")
+    ("module,m", boost::program_options::value<int>()->default_value(20), "1周期の頂点数")
     ("seed,s", boost::program_options::value<unsigned int>(), "乱数シード")
-	("input,i",boost::program_options::value<std::string>(), "input filepath")
     ("output,o",boost::program_options::value<std::string>(), "output filepath")
     ("log,l",boost::program_options::value<std::string>(), "log filepath")
     ("verbose,v",boost::program_options::value<std::string>(), "verbose output filepath")
-    ("device,D",boost::program_options::value<int>(), "GPU id")
-    ("temp,t",boost::program_options::value<double>(),"initial templature");
+    ("device,D",boost::program_options::value<int>(), "GPU id");
     boost::program_options::variables_map vm;
     try{
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, opt), vm);
@@ -42,14 +42,8 @@ int main(int argc, char* argv[]){
     std::ifstream inputfs;
     std::ofstream outputfs,verbosefs,logfs;
     bool verbose=false,logging=false;
-    if(vm.count("input")){
-        auto filename = vm["input"].as<std::string>();
-        inputfs.open(filename, std::ios::binary | std::ios::in);
-        if(!inputfs.is_open()){
-            std::cerr<<"error: "<<filename<<" is not open"<<std::endl;
-            exit(1);
-        }
-    }
+
+    //ファイルを開く
     if(vm.count("output")){
         auto filename = vm["output"].as<std::string>();
         outputfs.open(filename, std::ios::binary | std::ios::out);
@@ -65,7 +59,6 @@ int main(int argc, char* argv[]){
             std::cerr<<"error: "<<filename<<" is not open"<<std::endl;
             exit(1);
         }
-        logfs.precision(10);
         logging=true;
     }
     if(vm.count("verbose")){
@@ -75,23 +68,26 @@ int main(int argc, char* argv[]){
             std::cerr<<"error: "<<filename<<" is not open"<<std::endl;
             exit(1);
         }
-        verbosefs.precision(10);
         verbose=true;
     }
-    std::istream &ist = inputfs.is_open()?inputfs:std::cin;
-    std::ostream &ost = outputfs.is_open()?outputfs:std::cout;
-    if(verbose){
-        if(vm.count("input"))verbosefs<<"#input file: "<<vm["input"].as<std::string>()<<std::endl;
-        if(vm.count("output"))verbosefs<<"#output file: "<<vm["output"].as<std::string>()<<std::endl;
+
+
+    int N=1000,D=16,M=20;
+    if(vm.count("number")){
+        N=vm["number"].as<int>();
     }
-    if(logging){
-        if(vm.count("input"))logfs<<"#input file: "<<vm["input"].as<std::string>()<<std::endl;
-        if(vm.count("output"))logfs<<"#output file: "<<vm["output"].as<std::string>()<<std::endl;
+    if(vm.count("degree")){
+        D=vm["degree"].as<int>();
     }
-    graphgolf::part init;
-    init.load(ist);//初期解読み込み
-    if(verbose){
-        verbosefs<<"#N: "<<init.N<<" M: "<<init.M<<std::endl;
+    if(vm.count("module")){
+        M=vm["module"].as<int>();
+    }
+
+    std::vector<int> v(M*D);
+    for(int i=0;i<M;i++){
+        for(int j=0;j<D;j++){
+            v[i*D+j]=i;
+        }
     }
     unsigned int seed;
     if(vm.count("seed")){
@@ -100,17 +96,30 @@ int main(int argc, char* argv[]){
         std::random_device rd;
         seed=rd();
     }
-    if(verbose){
-        verbosefs<<"#seed: "<<seed<<std::endl;
+    if(logging){
+        if(vm.count("output")){
+            logfs<<"output file: "<<vm["output"].as<std::string>()<<std::endl;
+        }
+        logfs<<"degree: "<<D<<std::endl;
+        logfs<<"number: "<<N<<std::endl;
+        logfs<<"module: "<<M<<std::endl;
+        logfs<<"seed: "<<seed<<std::endl;
     }
     std::mt19937 engine(seed);
-    std::uniform_int_distribution<> dist_m(0,init.M-1);
-    std::uniform_int_distribution<> dist_e(0,init.degree-1);//正則を仮定
+    std::uniform_int_distribution<> dist(0,N/M-1);
+    int device=0;
+    if(vm.count("device")) device=vm["device"].as<int>();
+    graphgolf::cudaASPLconv cu(N,M,D,device);
+    // graphgolf::cpuASPLqueue<50> cu;
+    double delta=0;
+    int cnt=0;
+    std::uniform_int_distribution<> dist_m(0,M-1);
+    std::uniform_int_distribution<> dist_e(0,D-1);//正則を仮定
     std::uniform_int_distribution<> dist_v(0,1);
-    std::uniform_int_distribution<> dist_k(0,init.N/init.M-1);
+    std::uniform_int_distribution<> dist_k(0,N/M-1);
     std::function<graphgolf::part(graphgolf::part)> createNeighbour = [&](graphgolf::part p){
         int v = dist_v(engine);
-        if(init.N/init.M-1!=0&&v==0){
+        if(N/M-1!=0&&v==0){
             //辺の長さを変化させる
             int from = dist_m(engine);
             int idx_from = dist_e(engine);
@@ -196,85 +205,38 @@ int main(int argc, char* argv[]){
             return p;
         }
     };
-    int device=0;
-    if(vm.count("device")) device=vm["device"].as<int>();
-    graphgolf::cudaASPLconv cu(init.N,init.M,init.degree,device);
-    // graphgolf::cpuASPLqueue<50> cu;
-
-    std::cout.precision(10);
-
-    double init_ASPL = cu.calc(init);
-    graphgolf::part x = init;
-    double fx=init_ASPL;
-    graphgolf::part x_best = x;
-    double fx_best = fx;
-    std::cout<<"ASPL(init_x): "<<init_ASPL<<std::endl;
-    if(verbose){
-        verbosefs<<"#ASPL(init_x): "<<init_ASPL<<std::endl;
-    }
-    double temp = 0.001091346;
-    if(vm.count("temp"))temp=vm["temp"].as<double>();
-    if(logging){
-        logfs<<"#iteration ASPL(x_best) ASPL(x) ASPL(y) temp"<<std::endl;
-        logfs<<0<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<temp<<std::endl;
-    }
-    int count = 1000;
-    if(vm.count("count")){
-        count=vm["count"].as<int>();
-    }
-    std::uniform_real_distribution<double> dist_p(0,1);
-    /*
-    int64_t cnt=0;
-    double delta=0;
-    */
-    for(int i=1;i<=count;i++){
-        auto start = std::chrono::steady_clock::now();
-        graphgolf::part y=createNeighbour(x);
-        double fy=cu.calc(y);
-        auto end = std::chrono::steady_clock::now();
-        double elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count()/1000.0;
-        bool accept=false;
-        if(fy<fx){
-            accept=true;
-        }else if(dist_p(engine)<exp((fx-fy)*x.N*(x.N-1)/temp)){
-            accept=true;
+    for(int n_part=0;n_part<100;n_part++){
+        shuffle(v.begin(), v.end(), engine);
+        std::vector<std::vector<int>> edges(M);
+        for(int i=0;i<v.size();i+=2){
+            int a=v[i],b=v[i+1];
+            if(a>b)std::swap(a,b);
+            int diff=(b-a)+M*dist(engine);
+            edges[a].push_back(diff);
+            edges[b].push_back(-diff);
         }
-        /*
-        accept=false;
-        if(fy>fx){
-            delta+=fy-fx;
-            cnt++;
-        }
-        */
-        if(accept){
-            std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
-            std::cout<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" time: "<<elapsed<<"ms"<<std::flush;
-            if(verbose){
-                verbosefs<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" temp: "<<temp<<std::endl;
+        graphgolf::part x;
+        x.edges=edges;
+        x.N=N;
+        x.M=M;
+        x.degree=D;
+        double fx=cu.calc(x);
+        std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
+        std::cout<<n_part+1<<'/'<<100<<std::flush;
+        for(int n_neighbor=0;n_neighbor<100;n_neighbor++){
+            graphgolf::part y=createNeighbour(x);
+            double fy=cu.calc(y);
+            if(fy>fx&&fy!=1e9){
+                cnt++;
+                delta+=fy-fx;
             }
-            if(logging) logfs<<i<<' '<<fx_best<<' '<<fx<<' '<<temp<<std::endl;
-            fx=fy;
-            x=y;
         }
-        if(fy<fx_best){
-            std::cout<<std::endl;
-            if(verbose){
-                verbosefs<<"#update. new solution:"<<std::endl;
-                y.print(verbosefs);
-            }
-            x_best=y;
-            fx_best=fy;
-        }
-        if(i%10000==0) temp*=0.995;
     }
-    // std::cout<<cnt<<' '<<delta/cnt<<std::endl;
-    auto end = std::chrono::steady_clock::now();
-    double elapsed = std::chrono::duration_cast<std::chrono::seconds>(end-init_time).count();
-    std::cout<<std::endl;
-    std::cout<<"total elapsed time: "<<elapsed<<"s"<<std::endl; 
-    if(verbosefs){
-        verbosefs<<"#total elapsed time: "<<elapsed<<"s"<<std::endl; 
-    }
-    x_best.print(ost);
+    double avg=delta/cnt*N*(N-1);
+    std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
+    std::cout<<"cnt: "<<cnt<<std::endl;
+    std::cout<<"avg: "<<avg<<std::endl;
+    std::cout<<"inittemp: "<<-avg/log(0.4)<<std::endl;
+
     return 0;
 }

@@ -21,7 +21,6 @@ int main(int argc, char* argv[]){
     ("output,o",boost::program_options::value<std::string>(), "output filepath")
     ("log,l",boost::program_options::value<std::string>(), "log filepath")
     ("verbose,v",boost::program_options::value<std::string>(), "verbose output filepath")
-    ("device,D",boost::program_options::value<int>(), "GPU id")
     ("temp,t",boost::program_options::value<double>(),"initial templature");
     boost::program_options::variables_map vm;
     try{
@@ -196,10 +195,7 @@ int main(int argc, char* argv[]){
             return p;
         }
     };
-    int device=0;
-    if(vm.count("device")) device=vm["device"].as<int>();
-    graphgolf::cudaASPLconv cu(init.N,init.M,init.degree,device);
-    // graphgolf::cpuASPLqueue<50> cu;
+    graphgolf::cpuASPLqueue<50> cu;
 
     std::cout.precision(10);
 
@@ -212,11 +208,12 @@ int main(int argc, char* argv[]){
     if(verbose){
         verbosefs<<"#ASPL(init_x): "<<init_ASPL<<std::endl;
     }
-    double temp = 0.001091346;
-    if(vm.count("temp"))temp=vm["temp"].as<double>();
+    //double temp = 0.001091346;
+    double inittemp = 46.1793;
+    if(vm.count("temp"))inittemp=vm["temp"].as<double>();
     if(logging){
         logfs<<"#iteration ASPL(x_best) ASPL(x) ASPL(y) temp"<<std::endl;
-        logfs<<0<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<temp<<std::endl;
+        logfs<<0<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<inittemp<<std::endl;
     }
     int count = 1000;
     if(vm.count("count")){
@@ -227,6 +224,7 @@ int main(int argc, char* argv[]){
     int64_t cnt=0;
     double delta=0;
     */
+    double temp = inittemp;
     for(int i=1;i<=count;i++){
         auto start = std::chrono::steady_clock::now();
         graphgolf::part y=createNeighbour(x);
@@ -246,13 +244,19 @@ int main(int argc, char* argv[]){
             cnt++;
         }
         */
+        if(i%1000==0){
+                std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
+                std::cout<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" time: "<<elapsed<<"ms"<<std::flush;
+        }
         if(accept){
-            std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
-            std::cout<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" time: "<<elapsed<<"ms"<<std::flush;
-            if(verbose){
-                verbosefs<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" temp: "<<temp<<std::endl;
+            if(fx!=fy){
+                std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
+                std::cout<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" time: "<<elapsed<<"ms"<<std::flush;
+                if(verbose){
+                    verbosefs<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" temp: "<<temp<<std::endl;
+                }
+                if(logging) logfs<<i<<' '<<fx_best<<' '<<fx<<' '<<temp<<std::endl;
             }
-            if(logging) logfs<<i<<' '<<fx_best<<' '<<fx<<' '<<temp<<std::endl;
             fx=fy;
             x=y;
         }
@@ -265,7 +269,8 @@ int main(int argc, char* argv[]){
             x_best=y;
             fx_best=fy;
         }
-        if(i%10000==0) temp*=0.995;
+        //if(i%10000==0) temp=inittemp*(std::tanh(double(count-i)/count*6-3)+1)/2;
+        if(i%10000==0) temp=inittemp*std::tanh(double(count-i)/count*3);
     }
     // std::cout<<cnt<<' '<<delta/cnt<<std::endl;
     auto end = std::chrono::steady_clock::now();

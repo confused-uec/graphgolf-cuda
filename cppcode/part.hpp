@@ -1,7 +1,6 @@
 #pragma once
 #include <iostream>
 #include <vector>
-#include "arrayQueue.hpp"
 
 namespace graphgolf{
     struct part{
