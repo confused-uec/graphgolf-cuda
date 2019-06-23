@@ -40,6 +40,10 @@ add_executable(annealing_cpu cppcode/annealing_cpu.cpp ${HEADERS} cppcode/cpuASP
 target_include_directories(annealing_cpu PUBLIC cudacode cppcode)
 target_link_libraries(annealing_cpu Boost::program_options)
 
+add_executable(HillClimb_cpu cppcode/HillClimb_cpu.cpp ${HEADERS} cppcode/cpuASPLqueue.cpp)
+target_include_directories(HillClimb_cpu PUBLIC cudacode cppcode)
+target_link_libraries(HillClimb_cpu Boost::program_options)
+
 add_executable(initTemp cppcode/initTemp.cpp ${HEADERS} cppcode/cpuASPLqueue.cpp)
 target_include_directories(initTemp PUBLIC cudacode cppcode)
 target_link_libraries(initTemp cudaASPL Boost::program_options)

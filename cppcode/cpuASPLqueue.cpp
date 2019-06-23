@@ -16,7 +16,7 @@ namespace graphgolf{
                 }
             }
             bool unconected = false;
-            #pragma omp parallel for reduction(+:total)
+            //#pragma omp parallel for reduction(+:total)
             for(int i=0;i<p.M;i++){
                 arrayQueue<int,capacity> arr1,arr2;
                 uint64_t visited[capacity/64+1];
