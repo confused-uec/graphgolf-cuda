@@ -270,7 +270,8 @@ int main(int argc, char* argv[]){
             fx_best=fy;
         }
         //if(i%10000==0) temp=inittemp*(std::tanh(double(count-i)/count*6-3)+1)/2;
-        if(i%10000==0) temp=inittemp*std::tanh(double(count-i)/count*3);
+        //if(i%10000==0) temp=inittemp*std::tanh(double(count-i)/count*3);
+        if(i%10000==0) temp=inittemp*std::pow(0.995,i/10000);
     }
     // std::cout<<cnt<<' '<<delta/cnt<<std::endl;
     auto end = std::chrono::steady_clock::now();
