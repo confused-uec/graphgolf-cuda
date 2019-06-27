@@ -109,8 +109,8 @@ int main(int argc, char* argv[]){
     std::uniform_int_distribution<> dist(0,N/M-1);
     int device=0;
     if(vm.count("device")) device=vm["device"].as<int>();
-    graphgolf::cudaASPLconv cu(N,M,D,device);
-    // graphgolf::cpuASPLqueue<50> cu;
+    //graphgolf::cudaASPLconv cu(N,M,D,device);
+    graphgolf::cpuASPLqueue<50> cu;
     double delta=0;
     int cnt=0;
     std::uniform_int_distribution<> dist_m(0,M-1);
