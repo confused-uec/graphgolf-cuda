@@ -195,7 +195,7 @@ int main(int argc, char* argv[]){
             return p;
         }
     };
-    graphgolf::cpuASPLqueue<50> cu;
+    graphgolf::cpuASPLqueue<512> cu;
 
     std::cout.precision(10);
 
