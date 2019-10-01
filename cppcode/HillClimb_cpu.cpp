@@ -194,7 +194,7 @@ int main(int argc, char* argv[]){
             return p;
         }
     };
-    graphgolf::cpuASPLqueue<50> cu;
+    graphgolf::cpuASPLqueue<100000> cu;
     std::cout.precision(10);
 
     double init_ASPL = cu.calc(init);

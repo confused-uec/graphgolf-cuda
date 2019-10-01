@@ -10,6 +10,7 @@
 #include "part.hpp"
 #include "cudaASPLconv.hpp"
 #include "cpuASPLqueue.cpp"
+
 int main(int argc, char* argv[]){
     auto init_time = std::chrono::steady_clock::now();
     boost::program_options::options_description opt("オプション");
@@ -136,7 +137,7 @@ int main(int argc, char* argv[]){
             p.edges[from][idx_from]=newdiff;
             p.edges[to][idx_to]=-newdiff;
             return p; 
-        }else{
+        }else if(v<=1){
             //２本の辺を消して、交差
             // a---b, c---d -> a---d, b---cと貼り直す
             while(true){
@@ -194,29 +195,134 @@ int main(int argc, char* argv[]){
                 break;
             }
             return p;
-        }
+        }else{
+            //3本の辺を消して、交差
+            // a-b, c-d, e-f -> f-a, b-c, d-eと貼り直す
+            while(true){
+                int a=dist_m(engine);
+                int idx_a=dist_e(engine);
+                int diff_ab=p.edges[a][idx_a];
+                int b=(p.N+a+diff_ab)%p.M;
+                int idx_b=1000000;
+                for(int i=0;i<p.edges[b].size();i++){
+                    if(p.edges[b][i]+diff_ab==0){
+                        if(diff_ab==0&&i==idx_a) continue;
+                        idx_b=i;
+                        break;
+                    }
+                }
+                int c=dist_m(engine);
+                int idx_c=dist_e(engine);
+                int diff_cd=p.edges[c][idx_c];
+                int d=(p.N+c+diff_cd)%p.M;
+                int idx_d=1000000;
+                for(int i=0;i<p.edges[d].size();i++){
+                    if(p.edges[d][i]+diff_cd==0){
+                        if(diff_cd==0&&i==idx_c) continue;
+                        idx_d=i;
+                        break;
+                    }
+                }
+                int e=dist_m(engine);
+                int idx_e=dist_e(engine);
+                int diff_ef=p.edges[e][idx_e];
+                int f=(p.N+e+diff_ef)%p.M;
+                int idx_f=1000000;
+                for(int i=0;i<p.edges[f].size();i++){
+                    if(p.edges[f][i]+diff_ef==0){
+                        if(diff_ef==0&&i==idx_e) continue;
+                        idx_f=i;
+                        break;
+                    }
+                }
+                if(std::min(a,b)==std::min(c,d)&&
+                   std::max(a,b)==std::max(c,d)&&
+                   std::abs(diff_ab)==std::abs(diff_cd)){
+                    continue;
+                }
+                if(std::min(c,d)==std::min(e,f)&&
+                   std::max(c,d)==std::max(e,f)&&
+                   std::abs(diff_cd)==std::abs(diff_ef)){
+                    continue;
+                }
+                if(std::min(e,f)==std::min(a,b)&&
+                   std::max(e,f)==std::max(a,b)&&
+                   std::abs(diff_ef)==std::abs(diff_ab)){
+                    continue;
+                }
+                
+                assert(a<p.edges.size());
+                assert(b<p.edges.size());
+                assert(c<p.edges.size());
+                assert(d<p.edges.size());
+                assert(e<p.edges.size());
+                assert(f<p.edges.size());
+                
+                if(f>a){
+                    std::swap(f,a);
+                    std::swap(idx_f,idx_a);
+                }
+                int diff_fa=(a-f)+p.M*dist_k(engine);
+                assert(idx_a<p.edges[a].size());
+                assert(idx_d<p.edges[d].size());
+                p.edges[f][idx_f]=diff_fa;
+                p.edges[a][idx_a]=-diff_fa;
+                if(b>c){
+                    std::swap(b,c);
+                    std::swap(idx_b,idx_c);
+                }
+                int diff_bc=(c-b)+p.M*dist_k(engine);
+                assert(idx_b<p.edges[b].size());
+                assert(idx_c<p.edges[c].size());
+                p.edges[b][idx_b]=diff_bc;
+                p.edges[c][idx_c]=-diff_bc;
+
+                if(d>e){
+                    std::swap(d,e);
+                    std::swap(idx_d,idx_e);
+                }
+                int diff_de=(e-d)+p.M*dist_k(engine);
+                assert(idx_d<p.edges[d].size());
+                assert(idx_e<p.edges[e].size());
+                p.edges[d][idx_d]=diff_de;
+                p.edges[e][idx_e]=-diff_de;
+                break;
+            }
+            return p;        }
     };
+    //graphgolf::cpuASPLqueue<512> cu;
     int device=0;
     if(vm.count("device")) device=vm["device"].as<int>();
     graphgolf::cudaASPLconv cu(init.N,init.M,init.degree,device);
-    // graphgolf::cpuASPLqueue<50> cu;
-
     std::cout.precision(10);
 
-    double init_ASPL = cu.calc(init);
+    //double init_ASPL = cu.calc(init);
+    double init_ASPL;
+    int init_Diameter;
+    std::tie(init_Diameter,init_ASPL) = cu.diameterASPL(init);
+    if(init_Diameter==100000000){
+        if(logging){
+            logfs<<"#initial solution is unconnected"<<std::endl;
+        }
+        std::cout<<"initial solution is unconnected"<<std::endl;
+        return 0;
+    }
     graphgolf::part x = init;
     double fx=init_ASPL;
+    int dx=init_Diameter;
     graphgolf::part x_best = x;
     double fx_best = fx;
+    int dx_best = dx;
     std::cout<<"ASPL(init_x): "<<init_ASPL<<std::endl;
     if(verbose){
         verbosefs<<"#ASPL(init_x): "<<init_ASPL<<std::endl;
     }
-    double temp = 0.001091346;
-    if(vm.count("temp"))temp=vm["temp"].as<double>();
+    //double temp = 0.001091346;
+    double inittemp = 46.1793;
+    if(vm.count("temp"))inittemp=vm["temp"].as<double>();
     if(logging){
         logfs<<"#iteration ASPL(x_best) ASPL(x) ASPL(y) temp"<<std::endl;
-        logfs<<0<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<temp<<std::endl;
+        logfs<<0<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<inittemp<<std::endl;
     }
     int count = 1000;
     if(vm.count("count")){
@@ -224,13 +330,77 @@ int main(int argc, char* argv[]){
     }
     std::uniform_real_distribution<double> dist_p(0,1);
     /*
-    int64_t cnt=0;
-    double delta=0;
-    */
+    {//実践的焼きなまし法
+        
+        const int NEIGHBOURSIZE = std::min(100000,(x.M*x.degree)*(x.M*x.degree)*(x.N/x.M)*(x.N/x.M));
+        std::cout<<"NSIZE: "<<NEIGHBOURSIZE<<std::endl;
+        const double TEMPFACTOR = 0.99;
+        const int SIZEFACTOR = 16;
+        const double MINPERCENT = 0.02;
+        const int FREEZELIM = 5;
+        const double CUTOFF = 0.1;
+        double T = inittemp;
+        int iter=0;
+        for(int freeze=0,i=0;freeze<FREEZELIM;true){
+            bool x_best_update=false;
+            int changes, trials;
+            for(changes=trials=0;trials<SIZEFACTOR*NEIGHBOURSIZE&&changes<CUTOFF*NEIGHBOURSIZE;trials++){
+                auto start = std::chrono::steady_clock::now();
+                graphgolf::part y=createNeighbour(x);
+                double fy=cu.calc(y);
+                auto end = std::chrono::steady_clock::now();
+                double elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count()/1000.0;
+                iter++;
+                double delta = fy-fx;
+                bool accept=false;
+                if(fy<fx){
+                    accept=true;
+                }else if(dist_p(engine)<exp(-delta*x.N*(x.N-1)/T)){
+                    accept=true;
+                }
+                if(accept) changes++;
+                if(i%1000==0){
+                        std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
+                        std::cout<<"iter: "<<iter<<" fx_best: "<<fx_best<<" fx: "<<fx<<" temp: "<<T<<" time: "<<elapsed<<"ms"<<std::flush;
+                }
+                if(accept){
+                    if(fx!=fy){
+                        std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
+                        std::cout<<"iter: "<<iter<<" fx_best: "<<fx_best<<" fx: "<<fx<<" temp: "<<T<<" time: "<<elapsed<<"ms"<<std::flush;
+                        if(verbose){
+                            verbosefs<<"iter: "<<iter<<" fx_best: "<<fx_best<<" fx: "<<fx<<" temp: "<<T<<std::endl;
+                        }
+                        if(logging) logfs<<iter<<' '<<fx_best<<' '<<fx<<' '<<T<<std::endl;
+                    }
+                    fx=fy;
+                    x=y;
+                }
+                if(fy<fx_best){
+                    std::cout<<std::endl;
+                    if(verbose){
+                        verbosefs<<"#update. new solution:"<<std::endl;
+                        y.print(verbosefs);
+                    }
+                    x_best=y;
+                    fx_best=fy;
+                    x_best_update=true;
+                }
+            }
+            T*=TEMPFACTOR;
+            if(x_best_update)freeze=0;
+            if(double(changes)/trials<MINPERCENT) freeze++;
+            if(T<0.1)break;
+        }
+    }*/
+
+    double temp = inittemp;
     for(int i=1;i<=count;i++){
         auto start = std::chrono::steady_clock::now();
         graphgolf::part y=createNeighbour(x);
-        double fy=cu.calc(y);
+        //double fy=cu.calc(y);
+        double fy;
+        int dy;
+        std::tie(dy,fy)=cu.diameterASPL(y);
         auto end = std::chrono::steady_clock::now();
         double elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count()/1000.0;
         bool accept=false;
@@ -239,24 +409,25 @@ int main(int argc, char* argv[]){
         }else if(dist_p(engine)<exp((fx-fy)*x.N*(x.N-1)/temp)){
             accept=true;
         }
-        /*
-        accept=false;
-        if(fy>fx){
-            delta+=fy-fx;
-            cnt++;
+        if(dy>dx) accept = false;
+        if(i%1000==0){
+                std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
+                std::cout<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" time: "<<elapsed<<"ms"<<std::flush;
         }
-        */
         if(accept){
-            std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
-            std::cout<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" time: "<<elapsed<<"ms"<<std::flush;
-            if(verbose){
-                verbosefs<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" temp: "<<temp<<std::endl;
+            if(fx!=fy){
+                std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
+                std::cout<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" time: "<<elapsed<<"ms"<<std::flush;
+                if(verbose){
+                    verbosefs<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" temp: "<<temp<<std::endl;
+                }
+                if(logging) logfs<<i<<' '<<fx_best<<' '<<fx<<' '<<temp<<std::endl;
             }
-            if(logging) logfs<<i<<' '<<fx_best<<' '<<fx<<' '<<temp<<std::endl;
             fx=fy;
+            dx=dy;
             x=y;
         }
-        if(fy<fx_best){
+        if(accept&&fy<fx_best&&dy<=dx_best){
             std::cout<<std::endl;
             if(verbose){
                 verbosefs<<"#update. new solution:"<<std::endl;
@@ -264,10 +435,13 @@ int main(int argc, char* argv[]){
             }
             x_best=y;
             fx_best=fy;
+            dx_best=dy;
         }
-        if(i%10000==0) temp*=0.995;
+        //if(i%10000==0) temp=inittemp*(std::tanh(double(count-i)/count*6-3)+1)/2;
+        //if(i%10000==0) temp=inittemp*std::tanh(double(count-i)/count*3);
+        if(i%10000==0) temp=inittemp*std::pow(0.995,i/10000);
     }
-    // std::cout<<cnt<<' '<<delta/cnt<<std::endl;
+    
     auto end = std::chrono::steady_clock::now();
     double elapsed = std::chrono::duration_cast<std::chrono::seconds>(end-init_time).count();
     std::cout<<std::endl;

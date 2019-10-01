@@ -178,12 +178,12 @@ namespace graphgolf{
                     ;
                 }else{
                     std::cout<<"Graph is unconnected!"<<std::endl;
-                    return 100000000;
+                    return 1e9;
                 }
                 break;
             }else if(step==200){
                 std::cout<<"Too Large Diameter!"<<std::endl;
-                return 100000000;
+                return 1e9;
             }
         }
         kernel_aspl_reduce_plus<<<nBlock,1024>>>(d_sum,d_ret,N*width);
@@ -192,5 +192,52 @@ namespace graphgolf{
         for(int i=0;i<nBlock;i++) total+=h_ret[i];
         total*=N/M;
         return double(total)/(int64_t(N)*(N-1));
+    }
+    std::pair<int,double> cudaASPLconv::diameterASPL(part &p){
+        cudaSetDevice(device);
+        for(int i=0;i<M;i++){
+            for(int j=0;j<degree;j++) h_edges[i*degree+j]=p.edges[i][j];
+        }
+        cudaMemcpy(d_edges,h_edges,M*degree*sizeof(int),cudaMemcpyHostToDevice);
+        //15625x256 = 4x1,000,000
+        kernel_aspl_init<<<nBlock,1024>>>(d_bits,N,width,M,d_sum);
+        //std::cout<<"N: "<<N<<" M: "<<M<<" width: "<<width<<" nBlock: "<<nBlock<<std::endl;
+        cudaDeviceSynchronize();
+        int diameter=100000000;
+        for(int step=1;step<100;step++){
+            kernel_aspl_conv<<<nBlock,1024>>>(d_bits,d_diff_bits,d_edges,N,width,M,degree);
+            cudaDeviceSynchronize();
+            kernel_aspl_apply<<<nBlock,1024>>>(d_bits,d_diff_bits,d_sum,N,width,step);
+            cudaDeviceSynchronize();
+            kernel_aspl_reduce_OR<<<nBlock,1024>>>(d_diff_bits,d_ret_bits,N*width);
+            cudaDeviceSynchronize();
+            cudaMemcpy(h_ret_bits,d_ret_bits,nBlock*sizeof(uint),cudaMemcpyDeviceToHost);
+            uint flag = 0;
+            for(int i=0;i<nBlock;i++) flag|=h_ret_bits[i];
+            if(flag==0){
+                kernel_aspl_reduce_AND<<<nBlock,1024>>>(d_bits,d_ret_bits,N*width);
+                cudaDeviceSynchronize();
+                cudaMemcpy(h_ret_bits,d_ret_bits,nBlock*sizeof(uint),cudaMemcpyDeviceToHost);
+                flag=0xFFFFFFFF;
+                for(int i=0;i<nBlock;i++) flag&=h_ret_bits[i];
+                if(flag==0xFFFFFFFF){
+                    //std::cout<<"Diameter: "<<step-1<<std::endl;
+                    diameter=step-1;
+                }else{
+                    std::cout<<"Graph is unconnected!"<<std::endl;
+                    return std::make_pair(diameter,100000000.0);
+                }
+                break;
+            }else if(step==200){
+                std::cout<<"Too Large Diameter!"<<std::endl;
+                return std::make_pair(diameter,100000000.0);
+            }
+        }
+        kernel_aspl_reduce_plus<<<nBlock,1024>>>(d_sum,d_ret,N*width);
+        cudaMemcpy(h_ret,d_ret,nBlock*sizeof(int64_t),cudaMemcpyDeviceToHost);
+        int64_t total=0;
+        for(int i=0;i<nBlock;i++) total+=h_ret[i];
+        total*=N/M;
+        return std::make_pair(diameter,double(total)/(int64_t(N)*(N-1)));
     }
 }

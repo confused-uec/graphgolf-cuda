@@ -106,7 +106,7 @@ int main(int argc, char* argv[]){
     std::mt19937 engine(seed);
     std::uniform_int_distribution<> dist_m(0,init.M-1);
     std::uniform_int_distribution<> dist_e(0,init.degree-1);//正則を仮定
-    std::uniform_int_distribution<> dist_v(0,9);
+    std::uniform_int_distribution<> dist_v(0,1);
     std::uniform_int_distribution<> dist_k(0,init.N/init.M-1);
     std::function<graphgolf::part(graphgolf::part)> createNeighbour = [&](graphgolf::part p){
         int v = dist_v(engine);
@@ -289,15 +289,27 @@ int main(int argc, char* argv[]){
             }
             return p;        }
     };
-    graphgolf::cpuASPLqueue<512> cu;
+    graphgolf::cpuASPLqueue<1024> cu;
 
     std::cout.precision(10);
 
-    double init_ASPL = cu.calc(init);
+    //double init_ASPL = cu.calc(init);
+    double init_ASPL;
+    int init_Diameter;
+    std::tie(init_Diameter,init_ASPL) = cu.diameterASPL(init);
+    if(init_Diameter==std::numeric_limits<int>::max()){
+        if(logging){
+            logfs<<"#initial solution is unconnected"<<std::endl;
+        }
+        std::cout<<"initial solution is unconnected"<<std::endl;
+        return 0;
+    }
     graphgolf::part x = init;
     double fx=init_ASPL;
+    int dx=init_Diameter;
     graphgolf::part x_best = x;
     double fx_best = fx;
+    int dx_best = dx;
     std::cout<<"ASPL(init_x): "<<init_ASPL<<std::endl;
     if(verbose){
         verbosefs<<"#ASPL(init_x): "<<init_ASPL<<std::endl;
@@ -382,7 +394,10 @@ int main(int argc, char* argv[]){
     for(int i=1;i<=count;i++){
         auto start = std::chrono::steady_clock::now();
         graphgolf::part y=createNeighbour(x);
-        double fy=cu.calc(y);
+        //double fy=cu.calc(y);
+        double fy;
+        int dy;
+        std::tie(dy,fy)=cu.diameterASPL(y);
         auto end = std::chrono::steady_clock::now();
         double elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count()/1000.0;
         bool accept=false;
@@ -391,23 +406,20 @@ int main(int argc, char* argv[]){
         }else if(dist_p(engine)<exp((fx-fy)*x.N*(x.N-1)/temp)){
             accept=true;
         }
+        if(dy>dx) accept = false;
         if(i%1000==0){
                 std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
-                std::cout<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" time: "<<elapsed<<"ms"<<std::flush;
+                std::cout<<"iteration: "<<i<<" dx_best: "<<dx_best<<" fx_best: "<<fx_best<<" fx: "<<fx<<" time: "<<elapsed<<"ms"<<std::flush;
         }
+        bool printing = false;
         if(accept){
-            if(fx!=fy){
-                std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
-                std::cout<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" time: "<<elapsed<<"ms"<<std::flush;
-                if(verbose){
-                    verbosefs<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" temp: "<<temp<<std::endl;
-                }
-                if(logging) logfs<<i<<' '<<fx_best<<' '<<fx<<' '<<temp<<std::endl;
-            }
+            printing=(fx!=fy);
             fx=fy;
+            dx=dy;
             x=y;
         }
-        if(fy<fx_best){
+        if(accept&&fy<fx_best&&dy<=dx_best){
+            printing=true;
             std::cout<<std::endl;
             if(verbose){
                 verbosefs<<"#update. new solution:"<<std::endl;
@@ -415,6 +427,15 @@ int main(int argc, char* argv[]){
             }
             x_best=y;
             fx_best=fy;
+            dx_best=dy;
+        }
+        if(printing){
+            std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
+            std::cout<<"iteration: "<<i<<" dx_best: "<<dx_best<<" fx_best: "<<fx_best<<" fx: "<<fx<<" time: "<<elapsed<<"ms"<<std::flush;
+            if(verbose){
+                verbosefs<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" temp: "<<temp<<std::endl;
+            }
+            if(logging) logfs<<i<<' '<<fx_best<<' '<<fx<<' '<<temp<<std::endl;
         }
         //if(i%10000==0) temp=inittemp*(std::tanh(double(count-i)/count*6-3)+1)/2;
         //if(i%10000==0) temp=inittemp*std::tanh(double(count-i)/count*3);

@@ -9,6 +9,8 @@
 #include "part.hpp"
 #include "cudaASPLconv.hpp"
 #include "cudaASPLbeamer.hpp"
+#include "cpuASPLqueue.cpp"
+#include <boost/filesystem.hpp>
 
 int main(int argc, char* argv[]){
     boost::program_options::options_description opt("オプション");
@@ -46,6 +48,10 @@ int main(int argc, char* argv[]){
         inputfs.open(filename, std::ios::binary | std::ios::in);
         if(!inputfs.is_open()){
             std::cerr<<"error: "<<filename<<" is not open"<<std::endl;
+            exit(1);
+        }
+        if(!boost::filesystem::file_size(filename)){
+            std::cerr<<"error: "<<filename<<" is empty"<<std::endl;
             exit(1);
         }
     }
@@ -89,15 +95,20 @@ int main(int argc, char* argv[]){
 
     int device=0;
     if(vm.count("device")) device=vm["device"].as<int>();
+    //graphgolf::cpuASPLqueue<512> cu;
     graphgolf::cudaASPLconv cu(p.N,p.M,p.degree,device);
     //graphgolf::cudaASPLbeamer cu(p.N,p.M,p.degree,1);
     auto start = std::chrono::steady_clock::now();
-    double aspl=cu.calc(p);
+    //double aspl=cu.calc(p);
+    double aspl; int diameter;
+    std::tie(diameter,aspl)=cu.diameterASPL(p);
     auto end = std::chrono::steady_clock::now();
     std::cout.precision(11);
     ost.precision(11);
     std::cout<<"ASPL: "<<aspl<<std::endl;
     ost<<"ASPL: "<<aspl<<std::endl;
+    std::cout<<"Diameter: "<<diameter<<std::endl;
+    ost<<"Diameter: "<<diameter<<std::endl;
     double elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end-start).count();
     std::cout<<"TIME: "<<elapsed<<" msec."<<std::endl;
     ost<<"TIME: "<<elapsed<<" msec."<<std::endl;

@@ -109,14 +109,15 @@ int main(int argc, char* argv[]){
     std::uniform_int_distribution<> dist(0,N/M-1);
     int device=0;
     if(vm.count("device")) device=vm["device"].as<int>();
-    //graphgolf::cudaASPLconv cu(N,M,D,device);
-    graphgolf::cpuASPLqueue<512> cu;
+    graphgolf::cudaASPLconv cu(N,M,D,device);
+    //graphgolf::cpuASPLqueue<65536> cu;
     double delta=0;
     int cnt=0;
     std::uniform_int_distribution<> dist_m(0,M-1);
     std::uniform_int_distribution<> dist_e(0,D-1);//正則を仮定
     std::uniform_int_distribution<> dist_v(0,1);
     std::uniform_int_distribution<> dist_k(0,N/M-1);
+    /*
     std::function<graphgolf::part(graphgolf::part)> createNeighbour = [&](graphgolf::part p){
         int v = dist_v(engine);
         if(N/M-1!=0&&v==0){
@@ -205,6 +206,196 @@ int main(int argc, char* argv[]){
             return p;
         }
     };
+    */
+    std::function<graphgolf::part(graphgolf::part)> createNeighbour = [&](graphgolf::part p){
+        int v = dist_v(engine);
+        if(N/M-1!=0&&v==0){
+            //辺の長さを変化させる
+            int from = dist_m(engine);
+            std::uniform_int_distribution<> dist_e(0,p.edges[from].size()-1);
+            int idx_from = dist_e(engine);
+            int diff = p.edges[from][idx_from];
+            int to = (p.N+from+diff)%p.M;
+            int idx_to=10000000;
+            for(int i=0;i<p.edges[to].size();i++){
+                if(p.edges[to][i]+diff==0){
+                    if(diff==0&&i==idx_from) continue;
+                    idx_to=i;
+                    break;
+                }
+            }
+            if(from>to){
+                std::swap(from,to);
+                std::swap(idx_from,idx_to);
+            }
+            int newdiff=(to-from)+p.M*dist_k(engine);
+            assert(to<p.edges.size());
+            assert(from<p.edges.size());
+            assert(idx_from<p.edges[from].size());
+            assert(idx_to<p.edges[to].size());
+            p.edges[from][idx_from]=newdiff;
+            p.edges[to][idx_to]=-newdiff;
+            return p; 
+        }else if(v<=1){
+            //２本の辺を消して、交差
+            // a---b, c---d -> a---d, b---cと貼り直す
+            while(true){
+                int a=dist_m(engine);
+                std::uniform_int_distribution<> dist_eA(0,p.edges[a].size()-1);
+                int idx_a=dist_eA(engine);
+                int diff_ab=p.edges[a][idx_a];
+                int b=(p.N+a+diff_ab)%p.M;
+                int idx_b=1000000;
+                for(int i=0;i<p.edges[b].size();i++){
+                    if(p.edges[b][i]+diff_ab==0){
+                        if(diff_ab==0&&i==idx_a) continue;
+                        idx_b=i;
+                        break;
+                    }
+                }
+                int c=dist_m(engine);
+                std::uniform_int_distribution<> dist_eC(0,p.edges[c].size()-1);
+                int idx_c=dist_eC(engine);
+                int diff_cd=p.edges[c][idx_c];
+                int d=(p.N+c+diff_cd)%p.M;
+                int idx_d=1000000;
+                for(int i=0;i<p.edges[d].size();i++){
+                    if(p.edges[d][i]+diff_cd==0){
+                        if(diff_cd==0&&i==idx_c) continue;
+                        idx_d=i;
+                        break;
+                    }
+                }
+                if(std::min(a,b)==std::min(c,d)&&
+                   std::max(a,b)==std::max(c,d)&&
+                   std::abs(diff_ab)==std::abs(diff_cd)){
+                    continue;
+                } 
+                if(a>d){
+                    std::swap(a,d);
+                    std::swap(idx_a,idx_d);
+                }
+                int diff_ad=(d-a)+p.M*dist_k(engine);
+                assert(a<p.edges.size());
+                assert(b<p.edges.size());
+                assert(c<p.edges.size());
+                assert(d<p.edges.size());
+                assert(idx_a<p.edges[a].size());
+                assert(idx_d<p.edges[d].size());
+                p.edges[a][idx_a]=diff_ad;
+                p.edges[d][idx_d]=-diff_ad;
+                if(b>c){
+                    std::swap(b,c);
+                    std::swap(idx_b,idx_c);
+                }
+                int diff_bc=(c-b)+p.M*dist_k(engine);
+                assert(idx_b<p.edges[b].size());
+                assert(idx_c<p.edges[c].size());
+                p.edges[b][idx_b]=diff_bc;
+                p.edges[c][idx_c]=-diff_bc;
+                break;
+            }
+            return p;
+        }else{
+            //3本の辺を消して、交差
+            // a-b, c-d, e-f -> f-a, b-c, d-eと貼り直す
+            while(true){
+                int a=dist_m(engine);
+                std::uniform_int_distribution<> dist_eA(0,p.edges[a].size()-1);
+                int idx_a=dist_eA(engine);
+                int diff_ab=p.edges[a][idx_a];
+                int b=(p.N+a+diff_ab)%p.M;
+                int idx_b=1000000;
+                for(int i=0;i<p.edges[b].size();i++){
+                    if(p.edges[b][i]+diff_ab==0){
+                        if(diff_ab==0&&i==idx_a) continue;
+                        idx_b=i;
+                        break;
+                    }
+                }
+                int c=dist_m(engine);
+                std::uniform_int_distribution<> dist_eC(0,p.edges[c].size()-1);
+                int idx_c=dist_eC(engine);
+                int diff_cd=p.edges[c][idx_c];
+                int d=(p.N+c+diff_cd)%p.M;
+                int idx_d=1000000;
+                for(int i=0;i<p.edges[d].size();i++){
+                    if(p.edges[d][i]+diff_cd==0){
+                        if(diff_cd==0&&i==idx_c) continue;
+                        idx_d=i;
+                        break;
+                    }
+                }
+                int e=dist_m(engine);
+                std::uniform_int_distribution<> dist_eE(0,p.edges[e].size()-1);
+                int idx_e=dist_eE(engine);
+                int diff_ef=p.edges[e][idx_e];
+                int f=(p.N+e+diff_ef)%p.M;
+                int idx_f=1000000;
+                for(int i=0;i<p.edges[f].size();i++){
+                    if(p.edges[f][i]+diff_ef==0){
+                        if(diff_ef==0&&i==idx_e) continue;
+                        idx_f=i;
+                        break;
+                    }
+                }
+                if(std::min(a,b)==std::min(c,d)&&
+                   std::max(a,b)==std::max(c,d)&&
+                   std::abs(diff_ab)==std::abs(diff_cd)){
+                    continue;
+                }
+                if(std::min(c,d)==std::min(e,f)&&
+                   std::max(c,d)==std::max(e,f)&&
+                   std::abs(diff_cd)==std::abs(diff_ef)){
+                    continue;
+                }
+                if(std::min(e,f)==std::min(a,b)&&
+                   std::max(e,f)==std::max(a,b)&&
+                   std::abs(diff_ef)==std::abs(diff_ab)){
+                    continue;
+                }
+                
+                assert(a<p.edges.size());
+                assert(b<p.edges.size());
+                assert(c<p.edges.size());
+                assert(d<p.edges.size());
+                assert(e<p.edges.size());
+                assert(f<p.edges.size());
+                
+                if(f>a){
+                    std::swap(f,a);
+                    std::swap(idx_f,idx_a);
+                }
+                int diff_fa=(a-f)+p.M*dist_k(engine);
+                assert(idx_a<p.edges[a].size());
+                assert(idx_d<p.edges[d].size());
+                p.edges[f][idx_f]=diff_fa;
+                p.edges[a][idx_a]=-diff_fa;
+                if(b>c){
+                    std::swap(b,c);
+                    std::swap(idx_b,idx_c);
+                }
+                int diff_bc=(c-b)+p.M*dist_k(engine);
+                assert(idx_b<p.edges[b].size());
+                assert(idx_c<p.edges[c].size());
+                p.edges[b][idx_b]=diff_bc;
+                p.edges[c][idx_c]=-diff_bc;
+
+                if(d>e){
+                    std::swap(d,e);
+                    std::swap(idx_d,idx_e);
+                }
+                int diff_de=(e-d)+p.M*dist_k(engine);
+                assert(idx_d<p.edges[d].size());
+                assert(idx_e<p.edges[e].size());
+                p.edges[d][idx_d]=diff_de;
+                p.edges[e][idx_e]=-diff_de;
+                break;
+            }
+            return p;
+        }
+    };
+
     for(int n_part=0;n_part<100;n_part++){
         shuffle(v.begin(), v.end(), engine);
         std::vector<std::vector<int>> edges(M);

@@ -1,6 +1,6 @@
 #pragma once
 #include <iostream>
-#include "part.hpp"
+#include "../cppcode/part.hpp"
 
 namespace graphgolf{
     class cudaASPLconv{
@@ -18,5 +18,6 @@ namespace graphgolf{
         cudaASPLconv(int N, int M, int degree, int device);
         ~cudaASPLconv();
         double calc(part &p);
+        std::pair<int,double> diameterASPL(part &p);
     };
 }
