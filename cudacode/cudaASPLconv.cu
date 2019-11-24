@@ -3,6 +3,7 @@
 #include "cudaASPLconv.hpp"
 #include "part.hpp"
 #include <bitset>
+#include <cassert>
 namespace graphgolf{
 
     __global__ void kernel_aspl_init(uint *bits, int N, int width, int M, int* sum){
@@ -150,7 +151,7 @@ namespace graphgolf{
     double cudaASPLconv::calc(part &p){
         cudaSetDevice(device);
         for(int i=0;i<M;i++){
-            for(int j=0;j<degree;j++) h_edges[i*degree+j]=p.edges[i][j];
+            for(int j=0;j<degree;j++) h_edges[i*degree+j]=(j<p.edges[i].size()?p.edges[i][j]:0);
         }
         cudaMemcpy(d_edges,h_edges,M*degree*sizeof(int),cudaMemcpyHostToDevice);
         //15625x256 = 4x1,000,000
@@ -196,7 +197,7 @@ namespace graphgolf{
     std::pair<int,double> cudaASPLconv::diameterASPL(part &p){
         cudaSetDevice(device);
         for(int i=0;i<M;i++){
-            for(int j=0;j<degree;j++) h_edges[i*degree+j]=p.edges[i][j];
+            for(int j=0;j<degree;j++) h_edges[i*degree+j]=(j<p.edges[i].size()?p.edges[i][j]:0);
         }
         cudaMemcpy(d_edges,h_edges,M*degree*sizeof(int),cudaMemcpyHostToDevice);
         //15625x256 = 4x1,000,000
@@ -239,5 +240,70 @@ namespace graphgolf{
         for(int i=0;i<nBlock;i++) total+=h_ret[i];
         total*=N/M;
         return std::make_pair(diameter,double(total)/(int64_t(N)*(N-1)));
+    }
+    std::tuple<int,int,double> cudaASPLconv::WVCdiameterASPL(part &p){
+        cudaSetDevice(device);
+        for(int i=0;i<M;i++){
+            for(int j=0;j<degree;j++) h_edges[i*degree+j]=(j<p.edges[i].size()?p.edges[i][j]:0);
+        }
+        cudaMemcpy(d_edges,h_edges,M*degree*sizeof(int),cudaMemcpyHostToDevice);
+
+        //15625x256 = 4x1,000,000
+        kernel_aspl_init<<<nBlock,1024>>>(d_bits,N,width,M,d_sum);
+        cudaDeviceSynchronize();
+        //std::cout<<"N: "<<N<<" M: "<<M<<" width: "<<width<<" nBlock: "<<nBlock<<std::endl;
+        int diameter=100000000;
+
+        int WVC=100000000;
+        kernel_aspl_reduce_AND<<<nBlock,1024>>>(d_bits,d_ret_bits,N*width);
+        cudaDeviceSynchronize();
+        cudaMemcpy(h_ret_bits,d_ret_bits,nBlock*sizeof(uint),cudaMemcpyDeviceToHost);
+        uint WVCmask=0xFFFFFFFF;
+        for(int i=0;i<nBlock;i++) WVCmask&=h_ret_bits[i];
+
+        for(int step=1;step<=100;step++){
+            kernel_aspl_conv<<<nBlock,1024>>>(d_bits,d_diff_bits,d_edges,N,width,M,degree);
+            cudaDeviceSynchronize();
+            kernel_aspl_apply<<<nBlock,1024>>>(d_bits,d_diff_bits,d_sum,N,width,step);
+            cudaDeviceSynchronize();
+
+            kernel_aspl_reduce_OR<<<nBlock,1024>>>(d_diff_bits,d_ret_bits,N*width);
+            cudaDeviceSynchronize();
+            cudaMemcpy(h_ret_bits,d_ret_bits,nBlock*sizeof(uint),cudaMemcpyDeviceToHost);
+            uint updatebits = 0;
+            for(int i=0;i<nBlock;i++) updatebits|=h_ret_bits[i];
+
+            kernel_aspl_reduce_AND<<<nBlock,1024>>>(d_bits,d_ret_bits,N*width);
+            cudaDeviceSynchronize();
+            cudaMemcpy(h_ret_bits,d_ret_bits,nBlock*sizeof(uint),cudaMemcpyDeviceToHost);
+            uint completebits=0xFFFFFFFF;
+            for(int i=0;i<nBlock;i++) completebits&=h_ret_bits[i];
+
+            if(updatebits!=0){
+                WVC=__builtin_popcount(WVCmask^completebits);
+                WVCmask=completebits;
+            }
+
+            if(updatebits==0){
+                if(completebits==0xFFFFFFFF){
+                    //std::cout<<"Diameter: "<<step-1<<std::endl;
+                    diameter=step-1;
+                }else{
+                    std::cout<<"Graph is unconnected!"<<std::endl;
+                    return std::make_tuple(100000000,diameter,100000000.0);
+                }
+                break;
+            }else if(step==100){
+                std::cout<<"Too Large Diameter!"<<std::endl;
+                return std::make_tuple(100000000,diameter,100000000.0);
+            }
+        }
+        kernel_aspl_reduce_plus<<<nBlock,1024>>>(d_sum,d_ret,N*width);
+        cudaMemcpy(h_ret,d_ret,nBlock*sizeof(int64_t),cudaMemcpyDeviceToHost);
+        int64_t total=0;
+        for(int i=0;i<nBlock;i++) total+=h_ret[i];
+        total*=N/M;
+        assert(diameter>0);
+        return std::make_tuple(WVC,diameter,double(total)/(int64_t(N)*(N-1)));
     }
 }

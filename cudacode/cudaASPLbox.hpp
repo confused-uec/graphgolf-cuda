@@ -1,9 +1,9 @@
 #pragma once
 #include <iostream>
 #include <tuple>
-#include "../cppcode/part.hpp"
+#include "../cppcode/box.hpp"
 namespace graphgolf{
-    class cudaASPLconv{
+    class cudaASPLbox{
     private:
         uint *d_bits, *h_bits;
         uint *d_diff_bits;
@@ -14,11 +14,9 @@ namespace graphgolf{
         int device;
         int width,nBlock;
     public:
-        int N,M,degree;
-        cudaASPLconv(int N, int M, int degree, int device);
-        ~cudaASPLconv();
-        double calc(part &p);
-        std::pair<int,double> diameterASPL(part &p);
-        std::tuple<int,int,double> WVCdiameterASPL(part &p);
+        int Nx,Ny,Nz,Mx,My,Mz,degree;
+        cudaASPLbox(int Nx, int Ny, int Nz, int Mx, int My, int Mz, int degree, int device);
+        ~cudaASPLbox();
+        std::pair<int,double> diameterASPL(box &p);
     };
 }

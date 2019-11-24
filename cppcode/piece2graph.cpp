@@ -1,16 +1,9 @@
-
 #include <iostream>
+#include <cmath>
 #include <boost/program_options.hpp>
 #include <fstream>
 #include <vector>
-#include <chrono>
-#include <algorithm>
-#include <iomanip>
-#include "part.hpp"
-#include "cudaASPLconv.hpp"
-#include "cudaASPLbeamer.hpp"
-#include "cpuASPLqueue.cpp"
-#include <boost/filesystem.hpp>
+#include <piece.hpp>
 
 int main(int argc, char* argv[]){
     boost::program_options::options_description opt("オプション");
@@ -20,8 +13,7 @@ int main(int argc, char* argv[]){
 	("input,i",boost::program_options::value<std::string>(), "input filepath")
     ("output,o",boost::program_options::value<std::string>(), "output filepath")
     ("log,l",boost::program_options::value<std::string>(), "log filepath")
-    ("verbose,v",boost::program_options::value<std::string>(), "verbose output filepath")
-    ("device,D",boost::program_options::value<int>(), "GPU id");
+    ("verbose,v",boost::program_options::value<std::string>(), "verbose output filepath");
     boost::program_options::variables_map vm;
     try{
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, opt), vm);
@@ -48,10 +40,6 @@ int main(int argc, char* argv[]){
         inputfs.open(filename, std::ios::binary | std::ios::in);
         if(!inputfs.is_open()){
             std::cerr<<"error: "<<filename<<" is not open"<<std::endl;
-            exit(1);
-        }
-        if(!boost::filesystem::file_size(filename)){
-            std::cerr<<"error: "<<filename<<" is empty"<<std::endl;
             exit(1);
         }
     }
@@ -81,45 +69,36 @@ int main(int argc, char* argv[]){
         }
         verbose=true;
     }
+
     std::istream &ist = inputfs.is_open()?inputfs:std::cin;
     std::ostream &ost = outputfs.is_open()?outputfs:std::cout;
     if(logging){
-        if(vm.count("input"))logfs<<"input file: "<<vm["input"].as<std::string>()<<std::endl;
-        if(vm.count("output"))logfs<<"output file: "<<vm["output"].as<std::string>()<<std::endl;
+        logfs<<"input file: "<<vm["input"].as<std::string>()<<std::endl;
+        logfs<<"output file: "<<vm["output"].as<std::string>()<<std::endl;
     }
-    graphgolf::part p;
+    graphgolf::piece p;
     p.load(ist);
     if(logging){
-        logfs<<"N: "<<p.N<<" M: "<<p.M<<std::endl;
+        logfs<<"Nx: "<<p.Nx<<" Ny: "<<p.Ny<<" Mx: "<<p.Mx<<" My: "<<p.My<<std::endl;
     }
-
-    int device=0;
-    if(vm.count("device")) device=vm["device"].as<int>();
-    //graphgolf::cpuASPLqueue<512> cu;
-    graphgolf::cudaASPLconv cu(p.N,p.M,p.degree,device);
-    //graphgolf::cudaASPLbeamer cu(p.N,p.M,p.degree,1);
-    auto start = std::chrono::steady_clock::now();
-    //double aspl=cu.calc(p);
-    double aspl; int diameter,WVC;
-    std::tie(WVC,diameter,aspl)=cu.WVCdiameterASPL(p);
-    auto end = std::chrono::steady_clock::now();
-    std::cout.precision(11);
-    ost.precision(11);
-    std::cout<<"ASPL: "<<aspl<<std::endl;
-    ost<<"ASPL: "<<aspl<<std::endl;
-    std::cout<<"Diameter: "<<diameter<<std::endl;
-    ost<<"Diameter: "<<diameter<<std::endl;
-    std::cout<<"WVC: "<<WVC<<std::endl;
-    ost<<"WVC: "<<WVC<<std::endl;
-    double elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end-start).count();
-    std::cout<<"TIME: "<<elapsed<<" msec."<<std::endl;
-    ost<<"TIME: "<<elapsed<<" msec."<<std::endl;
-    // return 0;
-//    double elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end-start).count();
-//    std::cout.precision(10);
-//    std::cout<<"ASPL: "<<calcASPL<<std::endl;
-//    std::cout<<"TIME: "<<elapsed<<" msec."<<std::endl;
-    // int degree=16;
-    // int64_t traversedEdges = int64_t(p.N)*p.M*p.degree;
-    //std::cout<<"BFS Performance = "<<double(traversedEdges)/(elapsed/1000)/1000000<<" MTEPS"<<std::endl;
+    std::vector<std::pair<int,int>> V;
+    for(int x=0;x<p.Nx;x++){
+        for(int y=0;y<p.Ny;y++){
+            for(auto e:p.edges[x%p.Mx][y%p.My]){
+                int diffx,diffy;
+                std::tie(diffx,diffy)=e;
+                int a=x*p.Ny+y;
+                int b=(x+diffx+p.Nx)%p.Nx*p.Ny+(y+diffy+p.Ny)%p.Ny;
+                if(a>b)std::swap(a,b);
+                V.emplace_back(a,b);
+            }
+        }
+    }
+    std::sort(V.begin(), V.end());
+    V.erase(std::unique(V.begin(),V.end()),V.end());
+    for(auto p:V){
+        int a,b;
+        std::tie(a,b)=p;
+        ost<<a<<' '<<b<<std::endl;
+    }
 }

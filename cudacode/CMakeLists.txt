@@ -6,6 +6,10 @@ if(CUDA_FOUND)
         cudaASPLconv.hpp 
         cudaASPLbeamer.cu 
         cudaASPLbeamer.hpp 
+        cudaASPLpiece.cu
+        cudaASPLpiece.hpp
+        cudaASPLbox.cu
+        cudaASPLbox.hpp
     )
     set(CUDA_HOST_COMPILER clang++)
     target_compile_options(cudaASPL PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-gencode arch=compute_35,code=sm_35 -O2>)

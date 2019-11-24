@@ -299,7 +299,8 @@ int main(int argc, char* argv[]){
     //double init_ASPL = cu.calc(init);
     double init_ASPL;
     int init_Diameter;
-    std::tie(init_Diameter,init_ASPL) = cu.diameterASPL(init);
+    int init_WVC;
+    std::tie(init_WVC,init_Diameter,init_ASPL) = cu.WVCdiameterASPL(init);
     if(init_Diameter==100000000){
         if(logging){
             logfs<<"#initial solution is unconnected"<<std::endl;
@@ -310,9 +311,11 @@ int main(int argc, char* argv[]){
     graphgolf::part x = init;
     double fx=init_ASPL;
     int dx=init_Diameter;
+    int WVCx=init_WVC;
     graphgolf::part x_best = x;
     double fx_best = fx;
     int dx_best = dx;
+    int WVCx_best = WVCx;
     std::cout<<"ASPL(init_x): "<<init_ASPL<<std::endl;
     if(verbose){
         verbosefs<<"#ASPL(init_x): "<<init_ASPL<<std::endl;
@@ -393,41 +396,45 @@ int main(int argc, char* argv[]){
         }
     }*/
 
-    double temp = inittemp;
+    //double temp = inittemp;
     for(int i=1;i<=count;i++){
         auto start = std::chrono::steady_clock::now();
         graphgolf::part y=createNeighbour(x);
         //double fy=cu.calc(y);
         double fy;
-        int dy;
-        std::tie(dy,fy)=cu.diameterASPL(y);
+        int dy, WVCy;
+        std::tie(WVCy,dy,fy)=cu.WVCdiameterASPL(y);
+        assert(dy>0);
         auto end = std::chrono::steady_clock::now();
         double elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count()/1000.0;
         bool accept=false;
-        if(fy<fx||dy<dx){
+        double temp = inittemp*std::exp(-double(i)/count*std::log(inittemp));
+        if(dy<dx||(dy==dx&&WVCy<WVCx)||(dy==dx&&WVCy==WVCx&&fy<fx)){
             accept=true;
         }else if(dist_p(engine)<exp((fx-fy)*x.N*(x.N-1)/temp)){
             accept=true;
         }
-        if(dy>dx) accept = false;
-        if(i%1000==0){
+        if(dy>dx||(dy==dx&&WVCy>WVCx)) accept = false;
+        if(i%100==0){
                 std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
-                std::cout<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" time: "<<elapsed<<"ms"<<std::flush;
+                std::cout<<"iteration: "<<i<<" WVCx: "<<WVCx<<" dx: "<<dx<<" fx_best: "<<fx_best<<" fx: "<<fx<<" time: "<<elapsed<<"ms"<<std::flush;
         }
         if(accept){
             if(fx!=fy){
                 std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
-                std::cout<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" time: "<<elapsed<<"ms"<<std::flush;
+                std::cout<<"iteration: "<<i<<" WVCx: "<<WVCx<<" dx: "<<dx<<" fx_best: "<<fx_best<<" fx: "<<fx<<" time: "<<elapsed<<"ms"<<std::flush;
                 if(verbose){
                     verbosefs<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" temp: "<<temp<<std::endl;
                 }
                 if(logging) logfs<<i<<' '<<fx_best<<' '<<fx<<' '<<temp<<std::endl;
             }
+            assert(dy>0);
             fx=fy;
             dx=dy;
             x=y;
+            WVCx=WVCy;
         }
-        if(accept&&fy<fx_best&&dy<=dx_best){
+        if(dy<dx_best||(dy==dx_best&&WVCy<WVCx_best)||(dy==dx_best&&WVCy==WVCx_best&&fy<fx_best)){
             std::cout<<std::endl;
             if(verbose){
                 verbosefs<<"#update. new solution:"<<std::endl;
@@ -436,10 +443,11 @@ int main(int argc, char* argv[]){
             x_best=y;
             fx_best=fy;
             dx_best=dy;
+            WVCx_best=WVCy;
         }
         //if(i%10000==0) temp=inittemp*(std::tanh(double(count-i)/count*6-3)+1)/2;
         //if(i%10000==0) temp=inittemp*std::tanh(double(count-i)/count*3);
-        if(i%10000==0) temp=inittemp*std::pow(0.995,i/10000);
+        //if(i%10000==0) temp=inittemp*std::pow(0.995,i/10000);
     }
     
     auto end = std::chrono::steady_clock::now();

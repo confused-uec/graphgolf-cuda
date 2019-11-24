@@ -318,8 +318,8 @@ int main(int argc, char* argv[]){
     double inittemp = 46.1793;
     if(vm.count("temp"))inittemp=vm["temp"].as<double>();
     if(logging){
-        logfs<<"#iteration ASPL(x_best) ASPL(x) ASPL(y) temp"<<std::endl;
-        logfs<<0<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<inittemp<<std::endl;
+        logfs<<"#iteration ASPL(x_best) ASPL(x) ASPL(y) temp Diameter(x_best)"<<std::endl;
+        logfs<<0<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<init_ASPL<<' '<<inittemp<<' '<<init_Diameter<<std::endl;
     }
     int count = 1000;
     if(vm.count("count")){
@@ -401,7 +401,7 @@ int main(int argc, char* argv[]){
         auto end = std::chrono::steady_clock::now();
         double elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count()/1000.0;
         bool accept=false;
-        if(fy<fx){
+        if(fy<fx||dy<dx){
             accept=true;
         }else if(dist_p(engine)<exp((fx-fy)*x.N*(x.N-1)/temp)){
             accept=true;
@@ -418,7 +418,7 @@ int main(int argc, char* argv[]){
             dx=dy;
             x=y;
         }
-        if(accept&&fy<fx_best&&dy<=dx_best){
+        if(dy<dx_best||(fy<fx_best&&dy==dx_best)){
             printing=true;
             std::cout<<std::endl;
             if(verbose){
@@ -435,7 +435,7 @@ int main(int argc, char* argv[]){
             if(verbose){
                 verbosefs<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" temp: "<<temp<<std::endl;
             }
-            if(logging) logfs<<i<<' '<<fx_best<<' '<<fx<<' '<<temp<<std::endl;
+            if(logging) logfs<<i<<' '<<fx_best<<' '<<fx<<' '<<temp<<' '<<dx_best<<std::endl;
         }
         //if(i%10000==0) temp=inittemp*(std::tanh(double(count-i)/count*6-3)+1)/2;
         //if(i%10000==0) temp=inittemp*std::tanh(double(count-i)/count*3);

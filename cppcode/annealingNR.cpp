@@ -399,7 +399,7 @@ int main(int argc, char* argv[]){
             if(T<0.1)break;
         }
     }*/
-
+    /*
     double temp = inittemp;
     for(int i=1;i<=count;i++){
         auto start = std::chrono::steady_clock::now();
@@ -448,6 +448,56 @@ int main(int argc, char* argv[]){
         //if(i%10000==0) temp=inittemp*std::tanh(double(count-i)/count*3);
         if(i%10000==0) temp=inittemp*std::pow(0.995,i/10000);
     }
+    */
+    for(int i=1;i<=count;i++){
+        auto start = std::chrono::steady_clock::now();
+        graphgolf::part y=createNeighbour(x);
+        //double fy=cu.calc(y);
+        double fy;
+        int dy;
+        std::tie(dy,fy)=cu.diameterASPL(y);
+        auto end = std::chrono::steady_clock::now();
+        double elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count()/1000.0;
+        bool accept=false;
+        double temp = inittemp*std::exp(-double(i)/count*std::log(inittemp));
+        if(fy<fx||dy<dx){
+            accept=true;
+        }else if(dist_p(engine)<exp((fx-fy)*x.N*(x.N-1)/temp)){
+            accept=true;
+        }
+        if(dy>dx) accept = false;
+        if(i%1000==0){
+                std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
+                std::cout<<"iteration: "<<i<<" dx: "<<dx<<" fx_best: "<<fx_best<<" fx: "<<fx<<" time: "<<elapsed<<"ms"<<std::flush;
+        }
+        if(accept){
+            if(fx!=fy){
+                std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
+                std::cout<<"iteration: "<<i<<" dx: "<<dx<<" fx_best: "<<fx_best<<" fx: "<<fx<<" time: "<<elapsed<<"ms"<<std::flush;
+                if(verbose){
+                    verbosefs<<"iteration: "<<i<<" fx_best: "<<fx_best<<" fx: "<<fx<<" temp: "<<temp<<std::endl;
+                }
+                if(logging) logfs<<i<<' '<<fx_best<<' '<<fx<<' '<<temp<<std::endl;
+            }
+            fx=fy;
+            dx=dy;
+            x=y;
+        }
+        if(dy<dx_best||(dy==dx_best&&fy<fx_best)){
+            std::cout<<std::endl;
+            if(verbose){
+                verbosefs<<"#update. new solution:"<<std::endl;
+                y.print(verbosefs);
+            }
+            x_best=y;
+            fx_best=fy;
+            dx_best=dy;
+        }
+        //if(i%10000==0) temp=inittemp*(std::tanh(double(count-i)/count*6-3)+1)/2;
+        //if(i%10000==0) temp=inittemp*std::tanh(double(count-i)/count*3);
+        //if(i%10000==0) temp=inittemp*std::pow(0.995,i/10000);
+    }
+       
     
     auto end = std::chrono::steady_clock::now();
     double elapsed = std::chrono::duration_cast<std::chrono::seconds>(end-init_time).count();

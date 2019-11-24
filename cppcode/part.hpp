@@ -21,7 +21,7 @@ namespace graphgolf{
                 if(!degree)degree=E;
                 else if(degree!=E){
                     regular=false;
-                    std::cout<<"non-regular graph"<<std::endl;
+                    degree=std::max(degree,E);
                 }
                 for(int j=0;j<E;j++){
                     int diff;
@@ -29,6 +29,7 @@ namespace graphgolf{
                     edges[i].push_back(diff);
                 }
             }
+            if(!regular)std::cout<<"non-regular graph"<<std::endl;
         }
         void print(std::ostream &ost){
             ost<<N<<' '<<M<<std::endl;

@@ -6,8 +6,8 @@
 #include <fstream>
 #include <vector>
 #include <random>
-#include "part.hpp"
-#include "cudaASPLconv.hpp"
+#include "box.hpp"
+#include "cudaASPLbox.hpp"
 #include <cassert>
 int main(int argc, char* argv[]){
     auto init_time = std::chrono::steady_clock::now();
@@ -86,10 +86,11 @@ int main(int argc, char* argv[]){
         if(vm.count("input"))logfs<<"#input file: "<<vm["input"].as<std::string>()<<std::endl;
         if(vm.count("output"))logfs<<"#output file: "<<vm["output"].as<std::string>()<<std::endl;
     }
-    graphgolf::part init;
+    graphgolf::box init;
     init.load(ist);//初期解読み込み
     if(verbose){
-        verbosefs<<"#N: "<<init.N<<" M: "<<init.M<<std::endl;
+        verbosefs<<"#Nx: "<<init.Nx<<"#Ny: "<<init.Ny<<"#Nz: "<<init.Nz
+        <<" Mx: "<<init.Mx<<" My: "<<init.My<<" Mz: "<<init.Mz<<std::endl;
     }
     unsigned int seed;
     if(vm.count("seed")){
@@ -102,93 +103,116 @@ int main(int argc, char* argv[]){
         verbosefs<<"#seed: "<<seed<<std::endl;
     }
     std::mt19937 engine(seed);
-    std::uniform_int_distribution<> dist_m(0,init.M-1);
-    std::uniform_int_distribution<> dist_e(0,init.degree-1);//正則を仮定
     std::uniform_int_distribution<> dist_v(0,1);
-    std::uniform_int_distribution<> dist_k(0,init.N/init.M-1);
-    std::function<graphgolf::part(graphgolf::part)> createNeighbour = [&](graphgolf::part p){
+    std::uniform_int_distribution<> dist_mx(0,init.Mx-1);
+    std::uniform_int_distribution<> dist_my(0,init.My-1);
+    std::uniform_int_distribution<> dist_mz(0,init.Mz-1);
+    std::uniform_int_distribution<> dist_kx(0,init.Nx/init.Mx-1);
+    std::uniform_int_distribution<> dist_ky(0,init.Ny/init.My-1);
+    std::uniform_int_distribution<> dist_kz(0,init.Nz/init.Mz-1);
+    std::function<graphgolf::box(graphgolf::box)> createNeighbour = [&](graphgolf::box p){
         int v = dist_v(engine);
-        if(init.N/init.M-1!=0&&v==0){
+        if((p.Nx/p.Mx!=1)&&(p.Ny/p.My-1!=0)&&(p.Nz/p.Mz-1!=0)&&v==0){
             //辺の長さを変化させる
-            int from = dist_m(engine);
+            int fromx = dist_mx(engine);
+            int fromy = dist_my(engine);
+            int fromz = dist_mz(engine);
+            std::uniform_int_distribution<> dist_e(0,p.edges[fromx][fromy][fromz].size()-1);
             int idx_from = dist_e(engine);
-            int diff = p.edges[from][idx_from];
-            int to = (p.N+from+diff)%p.M;
+            int diffx,diffy,diffz;
+            std::tie(diffx,diffy,diffz)=p.edges[fromx][fromy][fromz][idx_from];
+            int tox = (p.Nx+fromx+diffx)%p.Mx;
+            int toy = (p.Ny+fromy+diffy)%p.My;
+            int toz = (p.Nz+fromz+diffz)%p.Mz;
             int idx_to=10000000;
-            for(int i=0;i<p.edges[to].size();i++){
-                if(p.edges[to][i]+diff==0){
-                    if(diff==0&&i==idx_from) continue;
+            for(int i=0;i<p.edges[tox][toy][toz].size();i++){
+                int tx,ty,tz;
+                std::tie(tx,ty,tz)=p.edges[tox][toy][toz][i];
+                if(tx+diffx==0&&ty+diffy==0&&tz+diffz==0){
+                    if(diffx==0&&diffy==0&&diffz==0&&i==idx_from) continue;
                     idx_to=i;
                     break;
                 }
             }
-            if(from>to){
-                std::swap(from,to);
-                std::swap(idx_from,idx_to);
-            }
-            int newdiff=(to-from)+p.M*dist_k(engine);
-            assert(to<p.edges.size());
-            assert(from<p.edges.size());
-            assert(idx_from<p.edges[from].size());
-            assert(idx_to<p.edges[to].size());
-            p.edges[from][idx_from]=newdiff;
-            p.edges[to][idx_to]=-newdiff;
+            int newdiffx=(tox-fromx)+p.Mx*dist_kx(engine);
+            int newdiffy=(toy-fromy)+p.My*dist_ky(engine);
+            int newdiffz=(toz-fromz)+p.Mz*dist_kz(engine);
+            assert(tox<p.Mx&&toy<p.My&&toz<p.Mz);
+            assert(fromx<p.Mx&&fromy<p.My&&fromz<p.Mz);
+            assert(idx_from<p.edges[fromx][fromy][fromz].size());
+            assert(idx_to<p.edges[tox][toy][toz].size());
+            p.edges[fromx][fromy][fromz][idx_from]=std::make_tuple(newdiffx,newdiffy,newdiffz);
+            p.edges[tox][toy][toz][idx_to]=std::make_tuple(-newdiffx,-newdiffy,-newdiffz);
             return p; 
         }else{
             //２本の辺を消して、交差
             // a---b, c---d -> a---d, b---cと貼り直す
             while(true){
-                int a=dist_m(engine);
-                int idx_a=dist_e(engine);
-                int diff_ab=p.edges[a][idx_a];
-                int b=(p.N+a+diff_ab)%p.M;
+                int ax=dist_mx(engine),ay=dist_my(engine),az=dist_mz(engine);
+                std::uniform_int_distribution<> dist_eA(0,p.edges[ax][ay][az].size()-1);
+                int idx_a=dist_eA(engine);
+                int diff_abx,diff_aby,diff_abz;
+                std::tie(diff_abx,diff_aby,diff_abz)=p.edges[ax][ay][az][idx_a];
+                int bx=(p.Nx+ax+diff_abx)%p.Mx;
+                int by=(p.Ny+ay+diff_aby)%p.My;
+                int bz=(p.Nz+az+diff_abz)%p.Mz;
                 int idx_b=1000000;
-                for(int i=0;i<p.edges[b].size();i++){
-                    if(p.edges[b][i]+diff_ab==0){
-                        if(diff_ab==0&&i==idx_a) continue;
+                for(int i=0;i<p.edges[bx][by][bz].size();i++){
+                    int tx,ty,tz;
+                    std::tie(tx,ty,tz)=p.edges[bx][by][bz][i];
+                    if(tx+diff_abx==0&&ty+diff_aby==0&&tz+diff_abz==0){
+                        if(diff_abx==0&&diff_aby==0&&diff_abz==0&&i==idx_a) continue;
                         idx_b=i;
                         break;
                     }
                 }
-                int c=dist_m(engine);
-                int idx_c=dist_e(engine);
-                int diff_cd=p.edges[c][idx_c];
-                int d=(p.N+c+diff_cd)%p.M;
+                int cx=dist_mx(engine),cy=dist_my(engine),cz=dist_mz(engine);
+                std::uniform_int_distribution<> dist_eC(0,p.edges[cx][cy][cz].size()-1);
+                int idx_c=dist_eC(engine);
+                int diff_cdx,diff_cdy,diff_cdz;
+                std::tie(diff_cdx,diff_cdy,diff_cdz)=p.edges[cx][cy][cz][idx_c];
+                int dx=(p.Nx+cx+diff_cdx)%p.Mx;
+                int dy=(p.Ny+cy+diff_cdy)%p.My;
+                int dz=(p.Nz+cz+diff_cdz)%p.Mz;
                 int idx_d=1000000;
-                for(int i=0;i<p.edges[d].size();i++){
-                    if(p.edges[d][i]+diff_cd==0){
-                        if(diff_cd==0&&i==idx_c) continue;
+                for(int i=0;i<p.edges[dx][dy][dz].size();i++){
+                    int tx,ty,tz;
+                    std::tie(tx,ty,tz)=p.edges[dx][dy][dz][i];
+                    if(tx+diff_cdx==0&&ty+diff_cdy==0&&tz+diff_cdz==0){
+                        if(diff_cdx==0&&diff_cdy==0&&diff_cdz==0&&i==idx_c) continue;
                         idx_d=i;
                         break;
                     }
                 }
-                if(std::min(a,b)==std::min(c,d)&&
-                   std::max(a,b)==std::max(c,d)&&
-                   std::abs(diff_ab)==std::abs(diff_cd)){
-                    continue;
+                if(std::min(ax,bx)==std::min(cx,dx)&&
+                   std::min(ay,by)==std::min(cy,dy)&&
+                   std::min(az,bz)==std::min(cz,dz)&&
+                   std::max(ax,bx)==std::max(cx,dx)&&
+                   std::max(ay,by)==std::max(cy,dy)&&
+                   std::max(az,bz)==std::max(cz,dz)&&
+                   std::abs(diff_abx)==std::abs(diff_cdx)&&
+                   std::abs(diff_aby)==std::abs(diff_cdy)&&
+                   std::abs(diff_abz)==std::abs(diff_cdz)){
+                    continue;//同じ辺を選んでしまうケースを回避(若干条件が緩い)
                 } 
-                if(a>d){
-                    std::swap(a,d);
-                    std::swap(idx_a,idx_d);
-                }
-                int diff_ad=(d-a)+p.M*dist_k(engine);
-                assert(a<p.edges.size());
-                assert(b<p.edges.size());
-                assert(c<p.edges.size());
-                assert(d<p.edges.size());
-                assert(idx_a<p.edges[a].size());
-                assert(idx_d<p.edges[d].size());
-                p.edges[a][idx_a]=diff_ad;
-                p.edges[d][idx_d]=-diff_ad;
-                if(b>c){
-                    std::swap(b,c);
-                    std::swap(idx_b,idx_c);
-                }
-                int diff_bc=(c-b)+p.M*dist_k(engine);
-                assert(idx_b<p.edges[b].size());
-                assert(idx_c<p.edges[c].size());
-                p.edges[b][idx_b]=diff_bc;
-                p.edges[c][idx_c]=-diff_bc;
+                int diff_adx=(dx-ax)+p.Mx*dist_kx(engine);
+                int diff_ady=(dy-ay)+p.My*dist_ky(engine);
+                int diff_adz=(dz-az)+p.Mz*dist_kz(engine);
+                assert(ax<p.Mx&&ay<p.My&&az<p.Mz);
+                assert(bx<p.Mx&&by<p.My&&bz<p.Mz);
+                assert(cx<p.Mx&&cy<p.My&&cz<p.Mz);
+                assert(dx<p.Mx&&dy<p.My&&dz<p.Mz);
+                assert(idx_a<p.edges[ax][ay][az].size());
+                assert(idx_d<p.edges[dx][dy][dz].size());
+                p.edges[ax][ay][az][idx_a]=std::make_tuple(diff_adx,diff_ady,diff_adz);
+                p.edges[dx][dy][dz][idx_d]=std::make_tuple(-diff_adx,-diff_ady,-diff_adz);
+                int diff_bcx=(cx-bx)+p.Mx*dist_kx(engine);
+                int diff_bcy=(cy-by)+p.My*dist_ky(engine);
+                int diff_bcz=(cz-bz)+p.Mz*dist_kz(engine);
+                assert(idx_b<p.edges[bx][by][bz].size());
+                assert(idx_c<p.edges[cx][cy][cz].size());
+                p.edges[bx][by][bz][idx_b]=std::make_tuple(diff_bcx,diff_bcy,diff_bcz);
+                p.edges[cx][cy][cz][idx_c]=std::make_tuple(-diff_bcx,-diff_bcy,-diff_bcz);
                 break;
             }
             return p;
@@ -196,7 +220,7 @@ int main(int argc, char* argv[]){
     };
     int device=0;
     if(vm.count("device")) device=vm["device"].as<int>();
-    graphgolf::cudaASPLconv cu(init.N,init.M,init.degree,device);
+    graphgolf::cudaASPLbox cu(init.Nx,init.Ny,init.Nz,init.Mx,init.My,init.Mz,init.degree,device);
 
     std::cout.precision(10);
 
@@ -204,7 +228,7 @@ int main(int argc, char* argv[]){
     double init_ASPL;
     int init_diam;
     std::tie(init_diam,init_ASPL)=cu.diameterASPL(init);
-    graphgolf::part x = init;
+    graphgolf::box x = init;
     double fx=init_ASPL;
     int dx = init_diam;
     std::cout<<"ASPL(init_x): "<<init_ASPL<<std::endl;
@@ -221,7 +245,7 @@ int main(int argc, char* argv[]){
     }
     for(int i=1;i<=count;i++){
         auto start = std::chrono::steady_clock::now();
-        graphgolf::part y=createNeighbour(x);
+        graphgolf::box y=createNeighbour(x);
         //double fy=cu.calc(y);
         double fy;
         int dy;

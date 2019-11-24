@@ -202,11 +202,12 @@ int main(int argc, char* argv[]){
 
     //double init_ASPL = cu.calc(init);
     double init_ASPL;
-    int init_diam;
-    std::tie(init_diam,init_ASPL)=cu.diameterASPL(init);
+    int init_diam,init_WVC;
+    std::tie(init_WVC,init_diam,init_ASPL)=cu.WVCdiameterASPL(init);
     graphgolf::part x = init;
     double fx=init_ASPL;
     int dx = init_diam;
+    int WVCx = init_WVC;
     std::cout<<"ASPL(init_x): "<<init_ASPL<<std::endl;
     if(verbose){
         verbosefs<<"#ASPL(init_x): "<<init_ASPL<<std::endl;
@@ -224,19 +225,19 @@ int main(int argc, char* argv[]){
         graphgolf::part y=createNeighbour(x);
         //double fy=cu.calc(y);
         double fy;
-        int dy;
-        std::tie(dy,fy)=cu.diameterASPL(y);
+        int dy,WVCy;
+        std::tie(WVCy,dy,fy)=cu.WVCdiameterASPL(y);
         auto end = std::chrono::steady_clock::now();
         double elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end-start).count();
         std::cout<<char(27)<<'['<<'F'<<char(27)<<'['<<'E'<<char(27)<<'['<<'K'<<std::flush;
-        std::cout<<"iteration: "<<i<<" dx: "<<dx<<" fx: "<<fx<<" fy: "<<fy<<" time: "<<elapsed<<"ms"<<std::flush;
+        std::cout<<"iteration: "<<i<<" WVCx: "<<WVCx<<" dx: "<<dx<<" fx: "<<fx<<" fy: "<<fy<<" time: "<<elapsed<<"ms"<<std::flush;
         if(verbose){
             verbosefs<<"iteration: "<<i<<" fx: "<<fx<<" fy: "<<fy<<std::endl;
         }
         if(logging){
             logfs<<i<<' '<<fx<<' '<<fy<<std::endl;
         }
-        if(dy<dx||(dy==dx&&fy<fx)){
+        if(dy<dx||(dy==dx&&WVCy<WVCx)||(dy==dx&&WVCy==WVCx&&fy<fx)){
             std::cout<<std::endl;
             if(verbose){
                 verbosefs<<"#update. new solution:"<<std::endl;
@@ -245,6 +246,7 @@ int main(int argc, char* argv[]){
             x=y;
             fx=fy;
             dx=dy;
+            WVCx=WVCy;
         }
     }
     auto end = std::chrono::steady_clock::now();

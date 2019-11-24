@@ -109,8 +109,8 @@ int main(int argc, char* argv[]){
     std::uniform_int_distribution<> dist(0,N/M-1);
     int device=0;
     if(vm.count("device")) device=vm["device"].as<int>();
-    graphgolf::cudaASPLconv cu(N,M,D,device);
-    //graphgolf::cpuASPLqueue<65536> cu;
+    //graphgolf::cudaASPLconv cu(N,M,D,device);
+    graphgolf::cpuASPLqueue<65536> cu;
     double delta=0;
     int cnt=0;
     std::uniform_int_distribution<> dist_m(0,M-1);
@@ -399,7 +399,7 @@ int main(int argc, char* argv[]){
     for(int n_part=0;n_part<100;n_part++){
         shuffle(v.begin(), v.end(), engine);
         std::vector<std::vector<int>> edges(M);
-        for(int i=0;i<v.size();i+=2){
+        for(int i=0;i+1<v.size();i+=2){
             int a=v[i],b=v[i+1];
             if(a>b)std::swap(a,b);
             int diff=(b-a)+M*dist(engine);
